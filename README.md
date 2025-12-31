@@ -1,137 +1,160 @@
-# Auto Downloader
+# Transmission Video Conversion Bridge
 
-Автоматизированная система загрузки и обработки видеофайлов на базе Transmission и Docker.
+Automated video file download and processing system based on Transmission BitTorrent client and Docker.
 
-## Описание
+**[Русская версия](README.ru.md)** | **English**
 
-Этот проект представляет собой Docker-контейнер с Transmission BitTorrent-клиентом, расширенный набором скриптов для автоматической обработки скачанных файлов:
+## Description
 
-- Автоматическое перемещение завершенных загрузок
-- Конвертация видео в оптимальные форматы
-- Очистка и нормализация имен файлов
-- Автоматическое тегирование через TMDB API
-- Мониторинг папки watch для автоматического добавления торрентов
+This project is a Docker container with Transmission BitTorrent client extended with a set of scripts for automatic processing of downloaded files:
 
-## Возможности
+- Automatic moving of completed downloads
+- Video conversion to optimal formats
+- Filename cleaning and normalization
+- Automatic tagging via TMDB API
+- Watch folder monitoring for automatic torrent addition
 
-- **Автоматическая обработка**: Скрипты запускаются автоматически после завершения загрузки
-- **Конвертация видео**: Автоматическая конвертация с использованием FFmpeg
-- **Умное переименование**: Очистка имен файлов от технических меток
-- **TMDB интеграция**: Автоматическое получение метаданных фильмов
-- **Watch folder**: Автоматический мониторинг папки для добавления новых торрентов
+## Features
 
-## Структура проекта
+- **Automatic Processing**: Scripts run automatically after download completion
+- **Video Conversion**: Automatic conversion using FFmpeg
+- **Smart Renaming**: Cleans filenames from technical tags and artifacts
+- **TMDB Integration**: Automatic movie metadata retrieval
+- **Watch Folder**: Automatic monitoring for new torrents
+
+## Project Structure
 
 ```
-auto-downloader/
-├── Dockerfile                 # Образ Docker с зависимостями
-├── docker-compose.yml         # Конфигурация Docker Compose
-├── scripts/                   # Скрипты обработки
-│   ├── move.sh               # Перемещение завершенных файлов
-│   ├── convert.sh            # Конвертация видео
-│   ├── monitor.sh            # Мониторинг watch-папки
-│   ├── rename.sh             # Переименование файлов
-│   ├── tag.sh                # Тегирование метаданными
-│   ├── clean_name.py         # Очистка имен файлов
-│   └── tmdb_tagger.py        # Работа с TMDB API
-├── init-scripts/             # Скрипты автозапуска
-├── config/                   # Конфигурация Transmission (не включена в git)
-├── logs/                     # Логи работы (не включена в git)
-├── downloads/                # Временная папка загрузок (не включена в git)
-└── watch/                    # Папка мониторинга торрентов (не включена в git)
+transmission-videoconversion-bridge/
+├── Dockerfile                 # Docker image with dependencies
+├── docker-compose.yml         # Docker Compose configuration
+├── scripts/                   # Processing scripts
+│   ├── move.sh               # Move completed files
+│   ├── convert.sh            # Video conversion
+│   ├── monitor.sh            # Watch folder monitoring
+│   ├── rename.sh             # File renaming
+│   ├── tag.sh                # Metadata tagging
+│   ├── clean_name.py         # Filename cleaning
+│   └── tmdb_tagger.py        # TMDB API integration
+├── init-scripts/             # Auto-start scripts
+├── config/                   # Transmission config (excluded from git)
+├── logs/                     # Log files (excluded from git)
+├── downloads/                # Temporary downloads (excluded from git)
+└── watch/                    # Torrent watch folder (excluded from git)
 ```
 
-## Установка
+## Installation
 
-### Предварительные требования
+### Prerequisites
 
 - Docker
 - Docker Compose
 
-### Быстрый старт
+### Quick Start
 
-1. Клонируйте репозиторий:
+1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd auto-downloader
+git clone https://github.com/adeliev/transmission-videoconversion-bridge.git
+cd transmission-videoconversion-bridge
 ```
 
-2. Скопируйте пример конфигурации:
+2. Copy the example configuration:
 ```bash
 cp docker-compose.example.yml docker-compose.yml
 ```
 
-3. Отредактируйте `docker-compose.yml`:
-   - Измените `USER` и `PASS` для веб-интерфейса
-   - Настройте пути к папкам на вашей системе
-   - Укажите правильный часовой пояс
+3. Edit `docker-compose.yml`:
+   - Change `USER` and `PASS` for web interface
+   - Configure paths to folders on your system
+   - Set the correct timezone
 
-4. Создайте необходимые папки:
+4. Create necessary folders:
 ```bash
 mkdir -p config downloads watch logs init-scripts
 ```
 
-5. Запустите контейнер:
+5. Start the container:
 ```bash
 docker-compose up -d
 ```
 
-6. Откройте веб-интерфейс Transmission:
+6. Open Transmission web interface:
 ```
 http://localhost:9091
 ```
 
-## Конфигурация
+## Configuration
 
-### Переменные окружения
+### Environment Variables
 
-- `PUID` / `PGID` - ID пользователя и группы для правильных прав доступа
-- `TZ` - Часовой пояс
-- `USER` / `PASS` - Учетные данные для веб-интерфейса
-- `TRANSMISSION_SCRIPT_TORRENT_DONE_ENABLED` - Включение скрипта обработки
-- `TRANSMISSION_SCRIPT_TORRENT_DONE_FILENAME` - Путь к скрипту обработки
+- `PUID` / `PGID` - User and group ID for proper file permissions
+- `TZ` - Timezone (e.g., Europe/London, America/New_York)
+- `USER` / `PASS` - Web interface credentials
+- `TRANSMISSION_SCRIPT_TORRENT_DONE_ENABLED` - Enable post-completion script
+- `TRANSMISSION_SCRIPT_TORRENT_DONE_FILENAME` - Path to processing script
 
-### Монтируемые тома
+### Mounted Volumes
 
-- `./config` - Конфигурация Transmission
-- `./scripts` - Скрипты обработки
-- `./logs` - Файлы логов
-- `./downloads` - Временная папка загрузок
-- `./watch` - Папка автоматического добавления торрентов
+- `./config` - Transmission configuration
+- `./scripts` - Processing scripts
+- `./logs` - Log files
+- `./downloads` - Temporary download folder
+- `./watch` - Automatic torrent addition folder
 
-## Скрипты
+## Scripts
 
 ### move.sh
-Основной скрипт, вызываемый после завершения загрузки. Определяет тип файла и перемещает его в соответствующую папку.
+Main script called after download completion. Determines file type and moves it to the appropriate folder.
 
 ### convert.sh
-Конвертирует видеофайлы в оптимальный формат с использованием FFmpeg.
+Converts video files to optimal format using FFmpeg.
 
 ### monitor.sh
-Отслеживает папку watch и автоматически добавляет новые .torrent файлы в Transmission.
+Monitors the watch folder and automatically adds new .torrent files to Transmission.
 
 ### clean_name.py
-Python-скрипт для очистки имен файлов от технических меток и форматирования.
+Python script for cleaning filenames from technical tags and formatting.
 
 ### tmdb_tagger.py
-Получает метаданные фильмов из TMDB и добавляет теги к файлам.
+Retrieves movie metadata from TMDB and adds tags to files.
 
-## Порты
+## Ports
 
-- `9091` - Веб-интерфейс Transmission
+- `9091` - Transmission web interface
 - `51414` - BitTorrent (TCP/UDP)
 
-## Логи
+## Logs
 
-Все логи сохраняются в папку `./logs/`:
-- Логи перемещения файлов
-- Логи конвертации
-- Логи мониторинга
+All logs are saved to `./logs/` folder:
+- File moving logs
+- Conversion logs
+- Monitoring logs
 
-## Лицензия
+## How It Works
+
+1. **Download**: Transmission downloads torrent files to the `./downloads` folder
+2. **Post-Processing**: When download completes, `move.sh` is triggered
+3. **Analysis**: Script determines if the file is a video and analyzes its properties
+4. **Conversion**: If needed, video is converted to optimal format using `convert.sh`
+5. **Tagging**: Metadata is retrieved from TMDB and added to the file
+6. **Moving**: File is moved to the final destination based on type (movies/downloads)
+7. **Watch Folder**: `monitor.sh` continuously watches for new .torrent files
+
+## Use Cases
+
+- **Home Media Server**: Automatically download and organize movies
+- **Media Collection Management**: Clean naming and proper metadata
+- **Format Standardization**: Convert all videos to a consistent format
+- **Automated Workflow**: Minimal manual intervention required
+
+## License
 
 MIT
 
-## Автор
+## Contributing
 
-Создано для автоматизации обработки медиа-файлов
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Author
+
+Created for automated media file processing
