@@ -1,0 +1,39 @@
+services:
+  transmission:
+    build: .
+    container_name: transmission-downloader
+    environment:
+      # User and group ID for file permissions
+      - PUID=1000
+      - PGID=1000
+      # Timezone (example: Europe/London, America/New_York, etc.)
+      - TZ=Europe/London
+      # Web interface credentials (CHANGE THESE!)
+      - USER=your_username
+      - PASS=your_password
+      # Enable post-completion script
+      - TRANSMISSION_SCRIPT_TORRENT_DONE_ENABLED=true
+      - TRANSMISSION_SCRIPT_TORRENT_DONE_FILENAME=/scripts/move.sh
+    volumes:
+      # Configuration
+      - ./config:/config
+      # Scripts
+      - ./scripts:/scripts
+      # Auto-start monitor
+      - ./init-scripts:/custom-cont-init.d
+      # Logs
+      - ./logs:/logs
+      # Temporary download folder (inside container)
+      - ./downloads:/downloads
+      # Watch folder for automatic torrent addition
+      - ./watch:/watch
+      # Movies destination folder - UPDATE THIS PATH
+      # Host path -> Container path
+      - /path/to/your/movies:/movies
+      # Downloads folder for non-video files and TV shows - UPDATE THIS PATH
+      - /path/to/your/downloads:/downloads_host
+    ports:
+      - 9091:9091
+      - 51414:51413
+      - 51414:51413/udp
+    restart: unless-stopped
