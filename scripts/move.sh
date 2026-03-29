@@ -26,8 +26,8 @@ log() {
 # Функция определения сериала
 is_tv_show() {
     local name="$1"
-    # Проверяем паттерны: season, сезон, s01e01, s1e1, и т.д.
-    if echo "$name" | grep -qiE '(season|сезон|s[0-9]{1,2}e[0-9]{1,2})'; then
+    # Проверяем паттерны: season, сезон, s01e01, s01.e01, s1_e1 и т.д.
+    if echo "$name" | grep -qiE '(season|сезон|s[0-9]{1,2}[._ -]*e[0-9]{1,2})'; then
         return 0  # это сериал
     fi
     return 1  # не сериал

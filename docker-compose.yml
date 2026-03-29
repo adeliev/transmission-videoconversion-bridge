@@ -1,0 +1,36 @@
+services:
+  transmission:
+    build: .
+    container_name: transmission-downloader
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=Europe/Bratislava
+      - USER=admin
+      - PASS=admin
+      # Включение запуска скрипта по завершении
+      - TRANSMISSION_SCRIPT_TORRENT_DONE_ENABLED=true
+      - TRANSMISSION_SCRIPT_TORRENT_DONE_FILENAME=/scripts/move.sh
+    volumes:
+      # Конфигурация
+      - ./config:/config
+      # Скрипты
+      - ./scripts:/scripts
+      # Автозапуск монитора
+      - ./init-scripts:/custom-cont-init.d
+      # Логи
+      - ./logs:/logs
+      # Временная папка для скачивания (внутри контейнера)
+      - ./downloads:/downloads
+      # Папка слежения (Watch Folder) - Локальная, стабильная
+      - ./watch:/watch
+      # Папка с фильмами (Куда складывать результат)
+      # Путь на хосте -> Путь в контейнере
+      - /Volumes/DeliRAID5/Downloads/Movies:/movies
+      # Папка Downloads для не-видео файлов и сериалов
+      - /Volumes/DeliRAID5/Downloads:/downloads_host
+    ports:
+      - 9091:9091
+      - 51414:51413
+      - 51414:51413/udp
+    restart: unless-stopped
