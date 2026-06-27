@@ -10,6 +10,13 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
 }
 
+rotate_log() {
+    local f="$1" max=10485760
+    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt "$max" ] && tail -n 2000 "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+}
+
+rotate_log "$LOGFILE"
+
 rename_movies() {
     local dir="$1"
     
@@ -19,13 +26,16 @@ rename_movies() {
         local base="${filename%.*}"
         local ext="${filename##*.}"
 
+        local year=$(echo "$base" | grep -oE '(19|20)[0-9]{2}' | tail -1)
         local new_base=$(/scripts/clean_name.py "$base")
 
         if [ "$base" != "$new_base" ] && [ -n "$new_base" ]; then
-            local new_file="$dir/$new_base.$ext"
+            local display_name="$new_base"
+            [ -n "$year" ] && display_name="$new_base ($year)"
+            local new_file="$dir/$display_name.$ext"
             if [ -f "$new_file" ]; then continue; fi
             mv "$file" "$new_file"
-            log "🏷️  Переименовано: '$filename' -> '$new_base.$ext'"
+            log "🏷️  Переименовано: '$filename' -> '$display_name.$ext'"
         fi
     done
 }

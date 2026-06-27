@@ -14,8 +14,7 @@ def log(message):
     with open(LOG_FILE, "a") as f:
         import datetime
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        f.write(f"{timestamp} - {message}
-")
+        f.write(f"{timestamp} - {message}\n")
     print(message)
 
 def get_api_key():
@@ -57,15 +56,19 @@ def search_tmdb(title, year, is_tv, api_key):
     return None
 
 def download_poster(poster_path):
-    if not poster_path: return None
+    if not poster_path:
+        log("🖼️  Постер отсутствует в TMDB")
+        return None
     url = f"https://image.tmdb.org/t/p/{POSTER_SIZE}{poster_path}"
     temp_img = "/tmp/poster.jpg"
     try:
         r = requests.get(url, stream=True)
         if r.status_code == 200:
             with open(temp_img, 'wb') as f: f.write(r.content)
+            log("🖼️  Постер загружен")
             return temp_img
-    except Exception: pass
+    except Exception:
+        log("⚠️  Ошибка загрузки постера")
     return None
 
 def tag_file(file_path, meta, poster_img):
@@ -74,7 +77,8 @@ def tag_file(file_path, meta, poster_img):
     overview = meta.get('overview', '')
     date = meta.get('release_date') or meta.get('first_air_date') or ''
     year = date.split('-')[0] if date else ''
-    log(f"🏷️  Тегируем: '{title}' ({year})")
+    poster_status = "с постером" if poster_img else "без постера"
+    log(f"🏷️  Тегируем: '{title}' ({year}) {poster_status}")
     cmd = ["ffmpeg", "-i", file_path]
     if poster_img:
         cmd += ["-i", poster_img, "-map", "0", "-map", "1", "-disposition:v:1", "attached_pic"]
@@ -96,7 +100,8 @@ if __name__ == "__main__":
     api_key = get_api_key()
     if not api_key: sys.exit(0)
     name, year, is_tv = parse_filename(os.path.basename(file_path))
-    log(f"🔍 Поиск в TMDB: '{name}' (TV: {is_tv})...")
+    year_str = f", Year: {year}" if year else ", Year: None"
+    log(f"🔍 Поиск в TMDB: '{name}' (TV: {is_tv}{year_str})...")
     meta = search_tmdb(name, year, is_tv, api_key)
     if meta:
         poster_img = download_poster(meta.get('poster_path'))

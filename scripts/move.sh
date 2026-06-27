@@ -23,6 +23,13 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
 }
 
+rotate_log() {
+    local f="$1" max=10485760
+    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt "$max" ] && tail -n 2000 "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+}
+
+rotate_log "$LOGFILE"
+
 # Функция определения сериала
 is_tv_show() {
     local name="$1"
@@ -160,6 +167,17 @@ elif [ -f "$INPUT_FULL_PATH" ]; then
     esac
 else
     log "❌ Ошибка: Путь не найден $INPUT_FULL_PATH"
+fi
+
+# Удаляем торрент из Transmission (файлы уже перемещены в библиотеку)
+if [ -n "$TR_TORRENT_HASH" ]; then
+    log "🗑️  Удаление торрента $TR_TORRENT_NAME из Transmission..."
+    transmission-remote -n "$USER:$PASS" -t "$TR_TORRENT_HASH" --remove
+    if [ $? -eq 0 ]; then
+        log "✅ Торрент удалён из Transmission"
+    else
+        log "❌ Ошибка удаления торрента из Transmission"
+    fi
 fi
 
 log "🏁 Готово."

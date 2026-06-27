@@ -13,6 +13,13 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
 }
 
+rotate_log() {
+    local f="$1" max=10485760
+    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt "$max" ] && tail -n 2000 "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+}
+
+rotate_log "$LOGFILE"
+
 log "🚀 Запуск tag.sh"
 
 find "$DIR_MP4" -maxdepth 1 -type f -iname "*.mp4" | while read -r file; do

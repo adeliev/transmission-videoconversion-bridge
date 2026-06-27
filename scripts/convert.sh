@@ -15,6 +15,14 @@ log() {
     echo "$(date "+%Y-%m-%d %H:%M:%S") - $1" >> "$LOGFILE"
 }
 
+rotate_log() {
+    local f="$1" max=10485760
+    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt "$max" ] && tail -n 2000 "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+}
+
+rotate_log "$LOGFILE"
+rotate_log "/logs/ffmpeg.log"
+
 convert_file() {
     local source_file="$1"
     local output_dir="$2"
@@ -56,7 +64,12 @@ convert_file() {
 
     if [ $? -eq 0 ]; then
         mv "$tmp_mp4" "$output_dir/$base.mp4"
-        log "✅ Сконвертирован: $filename"
+        local archive_base="/downloads_host/ArchivedSources"
+        local archive_dir="$archive_base"
+        [[ "$output_dir" == "/movies/MP4" ]] && archive_dir="$archive_base/Movies" || archive_dir="$archive_base/TV-Shows"
+        mkdir -p "$archive_dir"
+        mv "$source_file" "$archive_dir/"
+        log "✅ Сконвертирован: $filename (исходник в ArchivedSources)"
     else
         log "❌ Ошибка: $filename"
         rm -f "$tmp_mp4"
