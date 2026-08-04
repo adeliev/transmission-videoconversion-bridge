@@ -29,7 +29,10 @@ while true; do
 
     # 3. Запуск тегирования (TMDB)
     /scripts/tag.sh
-    
+
+    # 4. Перенос готового в библиотеку
+    /scripts/publish.sh
+
     log "💤 Ожидание 30 минут..."
     sleep 1800
 done

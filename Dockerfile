@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     ffmpeg \
     python3 \
     py3-requests \
+    py3-mutagen \
     findutils
 
 # Копирование скрипта внутрь образа не обязательно, так как мы можем примонтировать его,

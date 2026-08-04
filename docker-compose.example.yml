@@ -23,17 +23,20 @@ services:
       - ./init-scripts:/custom-cont-init.d
       # Logs
       - ./logs:/logs
-      # Temporary download folder (inside container)
-      - ./downloads:/downloads
       # Watch folder for automatic torrent addition
       - ./watch:/watch
-      # Movies destination folder - UPDATE THIS PATH
-      # Host path -> Container path
-      - /path/to/your/movies:/movies
-      # Downloads folder for non-video files and TV shows - UPDATE THIS PATH
-      - /path/to/your/downloads:/downloads_host
+      # Single mount covering Transmission's own incomplete/complete
+      # download dirs (<media>/Downloads/incomplete, .../complete), the
+      # staging area (<media>/Downloads/Movies, <media>/Downloads/TV-Shows)
+      # and the final library (<media>/New, <media>/Series,
+      # <media>/TVShows). Must be ONE bind mount - if any of these live on
+      # separate mounts, mv between them becomes a slow copy+delete instead
+      # of an instant rename, even on the same physical disk. UPDATE THIS PATH
+      - /path/to/your/media:/media
     ports:
       - 9091:9091
-      - 51414:51413
-      - 51414:51413/udp
+      # Host port MUST match the container's internal peer-port
+      # (config/settings.json) - see README's Ports section
+      - 51414:51414
+      - 51414:51414/udp
     restart: unless-stopped

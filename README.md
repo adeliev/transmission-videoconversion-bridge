@@ -1,46 +1,58 @@
 # Transmission Video Conversion Bridge
 
-Automated video file download and processing system based on Transmission BitTorrent client and Docker.
+Automated download, conversion, and tagging pipeline for movies and TV shows, built on the Transmission BitTorrent client and Docker.
 
 **[Русская версия](README.ru.md)** | **English**
 
 ## Description
 
-This project is a Docker container with Transmission BitTorrent client extended with a set of scripts for automatic processing of downloaded files:
+This project is a Docker container running Transmission, extended with a chain of scripts that turn a finished torrent into a properly named, tagged, library-ready file:
 
-- Automatic moving of completed downloads
-- Video conversion to optimal formats
-- Filename cleaning and normalization
-- Automatic tagging via TMDB API
-- Watch folder monitoring for automatic torrent addition
+- Automatic pickup of completed downloads (movies and TV shows, single episodes or full season packs)
+- Video conversion to MP4/H.264, with audio/subtitle tracks filtered down to the languages you care about
+- Filename and folder naming derived from the actual torrent release name (rutracker-style), not the often-cryptic source filename
+- Full metadata tagging via the TMDB API — iTunes-style tags (title, artist, cast/crew, description, poster, content rating) for both movies and TV episodes
+- Automatic routing into the right library folder, including Cyrillic- vs Latin-title detection for TV shows
+- Watch-folder monitoring for automatic `.torrent` addition
 
 ## Features
 
-- **Automatic Processing**: Scripts run automatically after download completion
-- **Video Conversion**: Automatic conversion using FFmpeg
-- **Smart Renaming**: Cleans filenames from technical tags and artifacts
-- **TMDB Integration**: Automatic movie metadata retrieval
-- **Watch Folder**: Automatic monitoring for new torrents
+- **Fully Automatic Pipeline**: a 30-minute loop runs convert → rename → tag → publish with no manual steps
+- **Movies and TV Shows**: season/episode detection from the torrent's own release name, including Russian multi-season-pack conventions (`Show-N (NN сер.)`) and packs with no per-file episode markers at all
+- **Smart Renaming**: derives clean names and folder structure from the parsed torrent name (title, season, year, country) instead of the raw release filename
+- **Audio/Subtitle Filtering**: keeps only the languages you want (default: Russian/English/Slovak/Czech), prefers full subtitles over forced-only tracks
+- **TMDB Integration**: Russian-priority metadata with automatic fallback to the original title/no-year search when a strict query returns nothing
+- **iTunes-Parity Tagging**: content rating and full cast/crew/studio info (`iTunEXTC`/`iTunMOVI`), matching what Subler would produce
+- **Safe Concurrency**: file locks around every stage so a manual run never collides with the scheduled cycle
+- **Single Bind Mount for Staging + Downloads + Library**: avoids slow copy-then-delete moves inside the container — everything under one mount so `mv` is an instant rename
 
 ## Project Structure
 
 ```
 transmission-videoconversion-bridge/
-├── Dockerfile                 # Docker image with dependencies
-├── docker-compose.yml         # Docker Compose configuration
-├── scripts/                   # Processing scripts
-│   ├── move.sh               # Move completed files
-│   ├── convert.sh            # Video conversion
-│   ├── monitor.sh            # Watch folder monitoring
-│   ├── rename.sh             # File renaming
-│   ├── tag.sh                # Metadata tagging
-│   ├── clean_name.py         # Filename cleaning
-│   └── tmdb_tagger.py        # TMDB API integration
-├── init-scripts/             # Auto-start scripts
-├── config/                   # Transmission config (excluded from git)
-├── logs/                     # Log files (excluded from git)
-├── downloads/                # Temporary downloads (excluded from git)
-└── watch/                    # Torrent watch folder (excluded from git)
+├── Dockerfile                    # Docker image with dependencies (ffmpeg, python3, mutagen, ...)
+├── docker-compose.yml            # Docker Compose configuration
+├── docker-compose.example.yml    # Template to copy and adapt
+├── scripts/
+│   ├── move.sh                   # torrent-done hook: moves finished files into staging
+│   ├── watch_new_torrents.sh     # background poller, captures the rich torrent name before
+│   │                              # Transmission overwrites it with real file metadata
+│   ├── convert.sh                # video conversion to MP4/H.264 via ffmpeg
+│   ├── get_ffmpeg_map.py         # decides which audio/subtitle streams to keep, by language
+│   ├── rename.sh                 # organizes staged files into Show/Season or clean movie names
+│   ├── parse_torrent_name.py     # parses rutracker-style release names into structured fields
+│   ├── plan_tv_episode_names.py  # infers episode numbers for packs with no sXXeYY markers
+│   ├── tv_info.py                # season/episode detection helpers, incl. Russian pack conventions
+│   ├── read_torrent_info.py      # reads fields back out of the .torrentinfo.json sidecar
+│   ├── is_cyrillic.py            # Cyrillic-vs-Latin title check, drives folder naming/routing
+│   ├── clean_name.py             # fallback filename cleanup when no torrent-name parse is available
+│   ├── tag.sh / tmdb_tagger.py    # TMDB lookup + full metadata/poster/cast tagging
+│   ├── publish.sh                # moves fully-tagged files from staging into the library
+│   └── monitor.sh                # the scheduling loop: convert → rename → tag → publish, every 30 min
+├── init-scripts/                 # container auto-start scripts
+├── config/                       # Transmission configuration (excluded from git)
+├── logs/                         # per-stage log files (excluded from git)
+└── watch/                        # torrent watch folder (excluded from git)
 ```
 
 ## Installation
@@ -49,6 +61,7 @@ transmission-videoconversion-bridge/
 
 - Docker
 - Docker Compose
+- A media library folder on the host (used for both staging and the final library — see note below)
 
 ### Quick Start
 
@@ -64,21 +77,22 @@ cp docker-compose.example.yml docker-compose.yml
 ```
 
 3. Edit `docker-compose.yml`:
-   - Change `USER` and `PASS` for web interface
-   - Configure paths to folders on your system
+   - Change `USER` and `PASS` for the web interface
+   - Set `/path/to/your/media` to a real path on your host (see **Mounted Volumes** below — this one mount doubles as the download destination, the processing staging area, and the final library)
    - Set the correct timezone
+   - If you want inbound peer connections to work well, forward the peer port (`51414` by default) on your router to this host, TCP+UDP, matching the port on both sides of the `ports:` mapping
 
 4. Create necessary folders:
 ```bash
-mkdir -p config downloads watch logs init-scripts
+mkdir -p config watch logs init-scripts
 ```
 
 5. Start the container:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-6. Open Transmission web interface:
+6. Open the Transmission web interface:
 ```
 http://localhost:9091
 ```
@@ -98,54 +112,40 @@ http://localhost:9091
 - `./config` - Transmission configuration
 - `./scripts` - Processing scripts
 - `./logs` - Log files
-- `./downloads` - Temporary download folder
 - `./watch` - Automatic torrent addition folder
+- `/path/to/your/media:/media` - **single mount** covering:
+  - Transmission's own `incomplete`/`complete` download folders (`<media>/Downloads/incomplete`, `.../complete`)
+  - The processing staging area (`<media>/Downloads/Movies/...`, `<media>/Downloads/TV-Shows/...`)
+  - The final library (`<media>/New`, `<media>/Series`, `<media>/TVShows`)
 
-## Scripts
+  These must all live on the **same** bind mount. If any of them is a separate mount, every `mv` between stages becomes a copy-then-delete inside the container even though the underlying host paths may be on the same physical disk — Docker bind mounts are separate mount namespaces regardless of the host filesystem underneath.
 
-### move.sh
-Main script called after download completion. Determines file type and moves it to the appropriate folder.
-
-### convert.sh
-Converts video files to optimal format using FFmpeg.
-
-### monitor.sh
-Monitors the watch folder and automatically adds new .torrent files to Transmission.
-
-### clean_name.py
-Python script for cleaning filenames from technical tags and formatting.
-
-### tmdb_tagger.py
-Retrieves movie metadata from TMDB and adds tags to files.
-
-## Ports
+### Ports
 
 - `9091` - Transmission web interface
-- `51414` - BitTorrent (TCP/UDP)
+- `51414` - BitTorrent peer port (TCP/UDP)
 
-## Logs
-
-All logs are saved to `./logs/` folder:
-- File moving logs
-- Conversion logs
-- Monitoring logs
+The host port and the container's internal `peer-port` (in `config/settings.json`) **must match** — BitTorrent announces its own listening port to trackers/DHT/peers, so if the host-side port mapping remaps to a different container port, incoming connections silently never arrive, even if your router forwarding is otherwise correct. Check reachability any time with:
+```bash
+docker exec transmission-downloader transmission-remote -n <user>:<pass> -pt
+```
 
 ## How It Works
 
-1. **Download**: Transmission downloads torrent files to the `./downloads` folder
-2. **Post-Processing**: When download completes, `move.sh` is triggered
-3. **Analysis**: Script determines if the file is a video and analyzes its properties
-4. **Conversion**: If needed, video is converted to optimal format using `convert.sh`
-5. **Tagging**: Metadata is retrieved from TMDB and added to the file
-6. **Moving**: File is moved to the final destination based on type (movies/downloads)
-7. **Watch Folder**: `monitor.sh` continuously watches for new .torrent files
+The whole pipeline is driven by `monitor.sh`, which runs `convert.sh → rename.sh → tag.sh → publish.sh` in a loop every 30 minutes (plus an independent background poller, `watch_new_torrents.sh`).
 
-## Use Cases
+1. **Download**: Transmission downloads to `<media>/Downloads/incomplete`, then `.../complete`.
+2. **Capture the release name**: as soon as a torrent is added, `watch_new_torrents.sh` saves its full rutracker-style name (title, season/episode range, year, country, genre) from the magnet — this has to happen immediately, because Transmission overwrites the torrent's display name with real file metadata once it fetches it.
+3. **Move**: on completion, `move.sh` (the `torrent-done` hook) parses that saved name via `parse_torrent_name.py`, decides movie vs. TV show **once per torrent** (not per file), and moves the video file(s) into staging, attaching a `.torrentinfo.json` sidecar with the parsed fields.
+4. **Convert**: `convert.sh` transcodes to MP4/H.264 as needed, using `get_ffmpeg_map.py` to keep only the audio/subtitle languages you want.
+5. **Rename**: `rename.sh` organizes staged files using the parsed torrent name — `Show Name/Season N/Show Name - sNNeNN.mp4` for TV (or `Сезон N` if the show's title is Cyrillic), clean `Title (Year).mp4` for movies. For packs with no recognizable per-file episode markers, `plan_tv_episode_names.py` infers episode numbers from whichever filename token actually varies across the pack.
+6. **Tag**: `tag.sh`/`tmdb_tagger.py` looks the title up on TMDB (Russian-priority, falling back to an unrestricted search if the strict query finds nothing), embeds full iTunes-style tags plus poster and cast/crew, and only then removes the `.torrentinfo.json` sidecar — a file that fails tagging keeps its sidecar so a later run can be identified as still-incomplete.
+7. **Publish**: `publish.sh` moves fully-tagged movies straight to `<media>/New`, and TV seasons to `<media>/Series` (Cyrillic show names) or `<media>/TVShows` (Latin), publishing a season only once every file staged for it is fully tagged.
 
-- **Home Media Server**: Automatically download and organize movies
-- **Media Collection Management**: Clean naming and proper metadata
-- **Format Standardization**: Convert all videos to a consistent format
-- **Automated Workflow**: Minimal manual intervention required
+## Troubleshooting
+
+- **A file seems stuck / never gets published**: check `logs/tag.log` for that file. `tag.sh` marks every file it processes as "attempted" the moment it runs, even if the TMDB lookup fails (so a genuinely-unmatched title doesn't get retried forever) — that means a *transient* failure (a momentary DNS/network hiccup, or a wrong title on the torrent) can also get permanently skipped. Fix: confirm the real problem is resolved, remove that file's exact path from `config/tagged_files.txt`, then re-run `tag.sh` and `publish.sh` manually.
+- **Slow, unstable download speed despite visible peers/seeds**: check `transmission-remote -pt` (port test). If it reports the port closed, incoming peer connections aren't reaching you at all — you're limited to peers who can dial out to you, which is a small fraction of any swarm. See the **Ports** section above for the host/container port-matching requirement, plus router-side forwarding.
 
 ## License
 

@@ -20,17 +20,17 @@ services:
       - ./init-scripts:/custom-cont-init.d
       # Логи
       - ./logs:/logs
-      # Временная папка для скачивания (внутри контейнера)
-      - ./downloads:/downloads
       # Папка слежения (Watch Folder) - Локальная, стабильная
       - ./watch:/watch
-      # Папка с фильмами (Куда складывать результат)
-      # Путь на хосте -> Путь в контейнере
-      - /Volumes/DeliRAID5/Downloads/Movies:/movies
-      # Папка Downloads для не-видео файлов и сериалов
-      - /Volumes/DeliRAID5/Downloads:/downloads_host
+      # Единый маунт: стейджинг (Media/Downloads/...), временные папки
+      # закачки (Media/Downloads/incomplete, complete) и библиотека
+      # (Media/New, Series, TVShows) - всё на одном bind mount, иначе mv
+      # между ними внутри контейнера превращается в copy+delete (см.
+      # историю миграции - Downloads и incomplete/complete раньше были
+      # отдельными маунтами)
+      - /Volumes/DeliRAID5/Media:/media
     ports:
       - 9091:9091
-      - 51414:51413
-      - 51414:51413/udp
+      - 51414:51414
+      - 51414:51414/udp
     restart: unless-stopped

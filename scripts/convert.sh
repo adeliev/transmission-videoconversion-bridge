@@ -2,12 +2,12 @@
 
 # === convert.sh: Умная Конвертация MKV/AVI -> MP4 ===
 
-MOV_MKV="/movies/MKV"
-MOV_AVI="/movies/AVI"
-MOV_MP4="/movies/MP4"
-TV_MKV="/downloads_host/TV-Shows/MKV"
-TV_AVI="/downloads_host/TV-Shows/AVI"
-TV_MP4="/downloads_host/TV-Shows/MP4"
+MOV_MKV="/media/Downloads/Movies/MKV"
+MOV_AVI="/media/Downloads/Movies/AVI"
+MOV_MP4="/media/Downloads/Movies/MP4"
+TV_MKV="/media/Downloads/TV-Shows/MKV"
+TV_AVI="/media/Downloads/TV-Shows/AVI"
+TV_MP4="/media/Downloads/TV-Shows/MP4"
 
 LOGFILE="/logs/convert.log"
 
@@ -22,6 +22,13 @@ rotate_log() {
 
 rotate_log "$LOGFILE"
 rotate_log "/logs/ffmpeg.log"
+
+# Не даём двум экземплярам convert.sh работать одновременно - см. tag.sh
+exec 200>"/config/.convert.sh.lock"
+if ! flock -n 200; then
+    log "⏭️  Уже выполняется другой convert.sh, пропуск"
+    exit 0
+fi
 
 convert_file() {
     local source_file="$1"
@@ -42,31 +49,52 @@ convert_file() {
 
     log "🎬 Анализ и конвертация: $filename"
     
-    local mapping=$(python3 /scripts/get_ffmpeg_map.py "$source_file")
-    if [ -z "$mapping" ]; then mapping="-map 0:v:0 -map 0:a:0?"; fi
+    # Массив, НЕ строка - имена дорожек вроде "HDRezka, MVO" или
+    # "Light Breeze" содержат пробелы/запятые и сломали бы word-split
+    # при обычной подстановке неэкранированной переменной
+    local mapping_args=()
+    mapfile -t mapping_args < <(python3 /scripts/get_ffmpeg_map.py "$source_file")
+    if [ ${#mapping_args[@]} -eq 0 ]; then
+        mapping_args=("-map" "0:v:0" "-map" "0:a:0?")
+    fi
 
-    local tmp_mp4="$output_dir/tmp_$base.mp4"
+    # ВАЖНО: временный файл - НЕ в $output_dir напрямую, а в отдельной
+    # подпапке .converting. rename.sh сканирует $output_dir с
+    # -maxdepth 1, но если конвертация долгая (для сезона это часто
+    # десятки минут), а rename.sh/monitor.sh запустили не в свою
+    # очередь (например, вручную во время работы convert.sh) - он мог
+    # подхватить ещё не готовый tmp_*.mp4 и переименовать/увести его
+    # прямо во время записи ffmpeg. Проверено на реальном случае -
+    # получилась "серия" несуществующего сериала "tmp Ш ...".
+    local tmp_dir="$output_dir/.converting"
+    mkdir -p "$tmp_dir"
+    local tmp_mp4="$tmp_dir/tmp_$base.mp4"
 
     case "$ext" in
         [Mm][Kk][Vv])
-            ffmpeg -i "$source_file" $mapping -c:v copy -c:a aac -b:a 256k -ac 2 -c:s mov_text "$tmp_mp4" -y < /dev/null >> "/logs/ffmpeg.log" 2>&1
+            ffmpeg -i "$source_file" "${mapping_args[@]}" -c:v copy -c:a aac -b:a 256k -ac 2 -c:s mov_text "$tmp_mp4" -y < /dev/null >> "/logs/ffmpeg.log" 2>&1
             ;;
         [Aa][Vv][Ii])
             local bitrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv="p=0" "$source_file")
             [ -z "$bitrate" ] || [ "$bitrate" = "N/A" ] && bitrate="2000000"
             local bitrate_kbps="$((bitrate / 1000))k"
-            ffmpeg -i "$source_file" $mapping -c:v libx264 -b:v "$bitrate_kbps" -c:a aac -b:a 256k -ac 2 -c:s mov_text "$tmp_mp4" -y < /dev/null >> "/logs/ffmpeg.log" 2>&1
+            ffmpeg -i "$source_file" "${mapping_args[@]}" -c:v libx264 -b:v "$bitrate_kbps" -c:a aac -b:a 256k -ac 2 -c:s mov_text "$tmp_mp4" -y < /dev/null >> "/logs/ffmpeg.log" 2>&1
             ;;
         *)
-            ffmpeg -i "$source_file" $mapping -c copy -c:s mov_text "$tmp_mp4" -y < /dev/null >> "/logs/ffmpeg.log" 2>&1
+            ffmpeg -i "$source_file" "${mapping_args[@]}" -c copy -c:s mov_text "$tmp_mp4" -y < /dev/null >> "/logs/ffmpeg.log" 2>&1
             ;;
     esac
 
     if [ $? -eq 0 ]; then
         mv "$tmp_mp4" "$output_dir/$base.mp4"
-        local archive_base="/downloads_host/ArchivedSources"
+        # Переносим "богатое" имя торрента (item 4) вместе с файлом,
+        # иначе оно осиротеет в ArchivedSources вместе с исходником
+        if [ -f "$source_file.torrentinfo.json" ]; then
+            mv "$source_file.torrentinfo.json" "$output_dir/$base.mp4.torrentinfo.json"
+        fi
+        local archive_base="/media/Downloads/ArchivedSources"
         local archive_dir="$archive_base"
-        [[ "$output_dir" == "/movies/MP4" ]] && archive_dir="$archive_base/Movies" || archive_dir="$archive_base/TV-Shows"
+        [[ "$output_dir" == "/media/Downloads/Movies/MP4" ]] && archive_dir="$archive_base/Movies" || archive_dir="$archive_base/TV-Shows"
         mkdir -p "$archive_dir"
         mv "$source_file" "$archive_dir/"
         log "✅ Сконвертирован: $filename (исходник в ArchivedSources)"
@@ -78,7 +106,7 @@ convert_file() {
 
 mkdir -p "$MOV_MP4" "$TV_MP4"
 find "$MOV_MKV" "$MOV_AVI" "$TV_MKV" "$TV_AVI" -type f \( -iname "*.mkv" -o -iname "*.avi" \) | while read -r file; do
-    if [[ "$file" == *"/movies/"* ]]; then
+    if [[ "$file" == *"/Downloads/Movies/"* ]]; then
         convert_file "$file" "$MOV_MP4"
     else
         convert_file "$file" "$TV_MP4"
